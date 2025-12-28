@@ -104,6 +104,10 @@ export default function MapScreen() {
   const [locationPermission, setLocationPermission] = useState<boolean>(false);
   const [showRoutes, setShowRoutes] = useState<boolean>(true);
   const [liveBuses, setLiveBuses] = useState<LiveBus[]>([]);
+  const [isLoadingBuses, setIsLoadingBuses] = useState(false);
+
+  // API configuration
+  const API_BASE_URL = 'http://your-server.com/api'; // Replace with your server URL
 
   // Default region (Colombo, Sri Lanka)
   const defaultRegion: Region = {
@@ -115,11 +119,89 @@ export default function MapScreen() {
 
   const [region, setRegion] = useState<Region>(defaultRegion);
 
-  // Initialize live buses with positions
-  useEffect(() => {
-    const initialBuses: LiveBus[] = [
+  // Fetch live bus data from API
+  const fetchLiveBuses = async () => {
+    try {
+      setIsLoadingBuses(true);
+      const response = await fetch(`${API_BASE_URL}/buses/live`);
+      const data = await response.json();
+      
+      if (data.success && data.buses) {
+        const buses: LiveBus[] = data.buses.map((bus: any) => ({
+          id: bus.busId,
+          route: bus.busId.split('_')[1] || 'Unknown', // Extract route from busId
+          direction: getRouteDirection(bus.routeId),
+          title: `Bus ${bus.busId.split('_')[1]} to ${getRouteDirection(bus.routeId)}`,
+          latitude: bus.latitude,
+          longitude: bus.longitude,
+          speed: bus.speed || 0,
+          heading: bus.heading || 0,
+          status: bus.status || 'active',
+          routeId: bus.routeId,
+          nextStop: getNextStop(bus.routeId),
+          eta: calculateETA(bus.latitude, bus.longitude, bus.speed),
+        }));
+        
+        setLiveBuses(buses);
+      }
+    } catch (error) {
+      console.error('Failed to fetch live buses:', error);
+      // Fallback to mock data if API fails
+      initializeMockBuses();
+    } finally {
+      setIsLoadingBuses(false);
+    }
+  };
+
+  // Helper functions
+  const getRouteDirection = (routeId: string): string => {
+    const directions: { [key: string]: string } = {
+      'route_138': 'Kandy',
+      'route_177': 'Galle',
+      'route_245': 'Negombo',
+    };
+    return directions[routeId] || 'Unknown';
+  };
+
+  const getNextStop = (routeId: string): string => {
+    const nextStops: { [key: string]: string } = {
+      'route_138': 'Pettah Central',
+      'route_177': 'Mount Lavinia',
+      'route_245': 'Kelaniya',
+    };
+    return nextStops[routeId] || 'Next Stop';
+  };
+
+  const calculateETA = (lat: number, lng: number, speed: number): string => {
+    // Simple ETA calculation based on distance and speed
+    // In real app, use proper route calculation
+    const userLat = userLocation?.latitude || defaultRegion.latitude;
+    const userLng = userLocation?.longitude || defaultRegion.longitude;
+    
+    const distance = calculateDistance(lat, lng, userLat, userLng);
+    const timeInHours = distance / Math.max(speed, 10); // Minimum 10 km/h
+    const timeInMinutes = Math.round(timeInHours * 60);
+    
+    return `${Math.max(1, timeInMinutes)} min`;
+  };
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Initialize mock buses as fallback
+  const initializeMockBuses = () => {
+    const mockBuses: LiveBus[] = [
       {
-        id: '1',
+        id: 'bus_138_01',
         route: '138',
         direction: 'Kandy',
         title: 'Bus 138 to Kandy',
@@ -133,7 +215,7 @@ export default function MapScreen() {
         eta: '5 min'
       },
       {
-        id: '2',
+        id: 'bus_177_01',
         route: '177',
         direction: 'Galle',
         title: 'Bus 177 to Galle',
@@ -147,7 +229,7 @@ export default function MapScreen() {
         eta: '8 min'
       },
       {
-        id: '3',
+        id: 'bus_245_01',
         route: '245',
         direction: 'Negombo',
         title: 'Bus 245 to Negombo',
@@ -162,38 +244,24 @@ export default function MapScreen() {
       }
     ];
     
-    setLiveBuses(initialBuses);
+    setLiveBuses(mockBuses);
+  };
+
+  // Initialize and fetch live buses
+  useEffect(() => {
+    fetchLiveBuses();
   }, []);
 
-  // Simulate live bus movement
+  // Auto-refresh live bus data
   useEffect(() => {
     const interval = setInterval(() => {
-      setLiveBuses(prevBuses => 
-        prevBuses.map(bus => {
-          // Find the route for this bus
-          const route = busRoutes.find(r => r.id === bus.routeId);
-          if (!route) return bus;
-
-          // Calculate movement based on speed (simplified)
-          const speedInDegreesPerSecond = (bus.speed / 111000) / 3600; // Rough conversion
-          const deltaLat = Math.cos(bus.heading * Math.PI / 180) * speedInDegreesPerSecond * 5; // 5 second interval
-          const deltaLng = Math.sin(bus.heading * Math.PI / 180) * speedInDegreesPerSecond * 5;
-
-          return {
-            ...bus,
-            latitude: bus.latitude + deltaLat,
-            longitude: bus.longitude + deltaLng,
-            // Randomly update heading slightly for more realistic movement
-            heading: bus.heading + (Math.random() - 0.5) * 10,
-            // Randomly update speed slightly
-            speed: Math.max(15, Math.min(50, bus.speed + (Math.random() - 0.5) * 5)),
-          };
-        })
-      );
-    }, 5000); // Update every 5 seconds
+      if (!isPinMode) {
+        fetchLiveBuses();
+      }
+    }, 10000); // Update every 10 seconds
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isPinMode]);
 
   useEffect(() => {
     requestLocationPermission();
