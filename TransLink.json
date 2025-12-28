@@ -1,0 +1,1237 @@
+{
+  "app_name": "TransLink",
+  "version": "1.0.0",
+  "platform": "Android",
+  "screen_flows": {
+    "authentication_flow": {
+      "flow_id": "AUTH_FLOW",
+      "screens": [
+        {
+          "screen_id": "AUTH_001",
+          "screen_name": "Splash Screen",
+          "route": "/splash",
+          "features": [
+            "TransLink logo and branding",
+            "App version number",
+            "Loading indicator",
+            "Auto-detect system language and theme",
+            "Check authentication status"
+          ],
+          "navigation": {
+            "if_authenticated": "/home",
+            "if_not_authenticated": "/login",
+            "duration_seconds": 3
+          },
+          "ui_elements": {
+            "logo": true,
+            "version_text": true,
+            "loading_spinner": true
+          }
+        },
+        {
+          "screen_id": "AUTH_002",
+          "screen_name": "Welcome & Login",
+          "route": "/login",
+          "features": [
+            "Welcome message in detected language",
+            "App introduction carousel (3 slides)",
+            "Google Sign-In button",
+            "Language selector"
+          ],
+          "carousel_slides": [
+            {
+              "type": "specific_route",
+              "label": "Specific Route",
+              "requires_route_selection": true
+            },
+            {
+              "type": "drivers_only",
+              "label": "Drivers Only"
+            }
+          ],
+          "create_alert_form": {
+            "fields": [
+              "alert_type",
+              "message",
+              "recipients"
+            ],
+            "actions": {
+              "send": "POST /api/alerts",
+              "confirmation": "Alert sent successfully"
+            }
+          },
+          "alerts_list": {
+            "fields": [
+              "timestamp",
+              "type",
+              "message",
+              "recipients_count",
+              "status"
+            ],
+            "actions": {
+              "tap_alert": "show_alert_details"
+            }
+          }
+        }
+      ]
+    },
+    "common_screens": {
+      "flow_id": "COMMON_SCREENS",
+      "applicable_to_all_roles": true,
+      "screens": [
+        {
+          "screen_id": "COM_001",
+          "screen_name": "Notification Center",
+          "route": "/notifications",
+          "features": [
+            "List of all notifications",
+            "Mark as read/unread",
+            "Delete notifications",
+            "Filter by type",
+            "Clear all button"
+          ],
+          "notification_types": [
+            "bus_arrival",
+            "service_alert",
+            "system_update",
+            "crowd_report_thanks"
+          ],
+          "actions": {
+            "tap_notification": "navigate_to_relevant_screen",
+            "swipe_to_delete": true,
+            "clear_all": {
+              "confirmation_required": true
+            }
+          },
+          "filters": {
+            "unread_only": true,
+            "by_type": true
+          }
+        },
+        {
+          "screen_id": "COM_002",
+          "screen_name": "Offline Mode Indicator",
+          "route": null,
+          "display_type": "banner",
+          "features": [
+            "Offline status message",
+            "Using saved data explanation",
+            "Retry connection button",
+            "Auto-hide when online"
+          ],
+          "banner": {
+            "position": "top",
+            "color": "warning_yellow",
+            "message": "You're offline",
+            "sub_message": "Using saved data",
+            "dismissible": false
+          },
+          "actions": {
+            "retry": "attempt_connection",
+            "auto_dismiss_when": "connection_restored"
+          },
+          "trigger": {
+            "condition": "no_internet_connection"
+          }
+        },
+        {
+          "screen_id": "COM_003",
+          "screen_name": "Error Screen",
+          "route": "/error",
+          "display_type": "full_screen_or_dialog",
+          "features": [
+            "Error icon",
+            "Clear error message",
+            "Suggested action",
+            "Retry button",
+            "Go back button"
+          ],
+          "error_types": [
+            {
+              "type": "network_error",
+              "icon": "wifi_off",
+              "message": "No internet connection",
+              "suggestion": "Check your connection and try again"
+            },
+            {
+              "type": "server_error",
+              "icon": "server_error",
+              "message": "Something went wrong",
+              "suggestion": "Please try again later"
+            },
+            {
+              "type": "not_found",
+              "icon": "search_off",
+              "message": "Content not found",
+              "suggestion": "The page you're looking for doesn't exist"
+            },
+            {
+              "type": "permission_denied",
+              "icon": "lock",
+              "message": "Permission required",
+              "suggestion": "Enable location permission to continue"
+            }
+          ],
+          "actions": {
+            "retry": "repeat_failed_action",
+            "go_back": "navigate_to_previous_screen"
+          }
+        }
+      ]
+    }
+  },
+  "navigation_patterns": {
+    "bottom_navigation": {
+      "always_visible": true,
+      "quick_access": true,
+      "role_specific": true
+    },
+    "back_button": {
+      "type": "native",
+      "behavior": "standard_android_ios"
+    },
+    "bottom_sheets": {
+      "use_for": [
+        "temporary_information",
+        "quick_actions",
+        "forms"
+      ],
+      "draggable": true
+    },
+    "modal_dialogs": {
+      "use_for": [
+        "confirmations",
+        "critical_actions",
+        "alerts"
+      ]
+    },
+    "swipe_gestures": {
+      "card_actions": true,
+      "dismiss_sheets": true,
+      "navigation": false
+    }
+  },
+  "interaction_patterns": {
+    "gestures": {
+      "tap": "primary_action",
+      "long_press": "map_pin_drop",
+      "swipe_right": "save_to_favorites",
+      "swipe_left": "delete_or_remove",
+      "pull_down": "refresh",
+      "drag": "move_bottom_sheets"
+    },
+    "loading_states": {
+      "lists": "skeleton_screens",
+      "cards": "shimmer_effect",
+      "actions": "progress_indicators",
+      "timeout_seconds": 10
+    },
+    "empty_states": {
+      "illustration": true,
+      "explanation": true,
+      "call_to_action": true,
+      "help_text": true
+    },
+    "feedback": {
+      "toast": "brief_messages",
+      "snackbar": "with_action",
+      "icons": "check_or_error",
+      "alerts": "color_coded"
+    }
+  },
+  "accessibility_features": {
+    "high_contrast_mode": true,
+    "screen_reader_compatible": true,
+    "minimum_touch_target_dp": 48,
+    "focus_indicators": "clear_and_visible",
+    "voice_commands": "search_enabled",
+    "text_scaling": true,
+    "color_blind_friendly": true,
+    "haptic_feedback": true
+  },
+  "offline_capabilities": {
+    "storage": {
+      "type": "SQLite",
+      "cached_data": [
+        "routes",
+        "recent_searches",
+        "user_preferences",
+        "historical_predictions"
+      ]
+    },
+    "features_available_offline": [
+      "view_cached_routes",
+      "search_recent_destinations",
+      "view_predicted_arrival_times",
+      "basic_map_navigation"
+    ],
+    "sync_when_online": {
+      "automatic": true,
+      "manual_option": true,
+      "background": true
+    }
+  },
+  "performance_targets": {
+    "app_launch_seconds": 3,
+    "api_response_seconds": 2,
+    "map_load_seconds": 5,
+    "frame_rate_fps": 60,
+    "battery_consumption": "minimal_with_optimization"
+  }
+}"slide": 1,
+              "title": "Track buses in real-time",
+              "icon": "bus_location"
+            },
+            {
+              "slide": 2,
+              "title": "Find routes to your destination",
+              "icon": "route_search"
+            },
+            {
+              "slide": 3,
+              "title": "Get arrival predictions offline",
+              "icon": "offline_mode"
+            }
+          ],
+          "actions": [
+            {
+              "action": "sign_in_with_google",
+              "button_text": "Sign in with Google",
+              "on_success": "/role-selection",
+              "on_failure": "show_error_retry"
+            }
+          ],
+          "language_options": ["Sinhala", "Tamil", "English"]
+        },
+        {
+          "screen_id": "AUTH_003",
+          "screen_name": "Role Selection",
+          "route": "/role-selection",
+          "first_time_only": true,
+          "features": [
+            "Role selection cards",
+            "Brief description for each role",
+            "Continue button"
+          ],
+          "roles": [
+            {
+              "role_id": "DRIVER",
+              "role_name": "Bus Driver",
+              "icon": "bus",
+              "description": "I drive a bus",
+              "next_screen": "/driver/route-selection"
+            },
+            {
+              "role_id": "PASSENGER",
+              "role_name": "Passenger",
+              "icon": "person",
+              "description": "I travel by bus",
+              "next_screen": "/passenger/ui-preference"
+            },
+            {
+              "role_id": "ADMIN",
+              "role_name": "Administrator",
+              "icon": "admin",
+              "description": "I manage the system",
+              "next_screen": "/admin/dashboard",
+              "note": "Web redirect prompt"
+            }
+          ],
+          "validation": {
+            "require_selection": true
+          }
+        },
+        {
+          "screen_id": "AUTH_004",
+          "screen_name": "UI Preference Selection",
+          "route": "/passenger/ui-preference",
+          "role_required": "PASSENGER",
+          "first_time_only": true,
+          "features": [
+            "UI mode preview comparison",
+            "Side-by-side mode display",
+            "Setting change notice",
+            "Continue button"
+          ],
+          "ui_modes": [
+            {
+              "mode_id": "SIMPLE",
+              "mode_name": "Simple Mode",
+              "description": "Large buttons, high contrast, step-by-step",
+              "preview_image": "simple_mode_preview"
+            },
+            {
+              "mode_id": "MODERN",
+              "mode_name": "Modern Mode",
+              "description": "Compact design, smooth animations",
+              "preview_image": "modern_mode_preview"
+            }
+          ],
+          "navigation": {
+            "next_screen": "/passenger/home",
+            "save_preference": true
+          }
+        },
+        {
+          "screen_id": "AUTH_005",
+          "screen_name": "Driver Route Selection",
+          "route": "/driver/route-selection",
+          "role_required": "DRIVER",
+          "first_time_only": true,
+          "features": [
+            "Searchable route dropdown",
+            "Route preview on map",
+            "Route details display",
+            "Confirm button"
+          ],
+          "components": {
+            "search_input": true,
+            "map_preview": true,
+            "route_details": {
+              "stops_count": true,
+              "distance": true,
+              "operating_hours": true
+            }
+          },
+          "actions": [
+            {
+              "action": "confirm_route",
+              "save_local": true,
+              "sync_backend": true,
+              "next_screen": "/driver/home",
+              "start_tracking": true
+            }
+          ]
+        }
+      ]
+    },
+    "passenger_flow": {
+      "flow_id": "PASSENGER_FLOW",
+      "role_required": "PASSENGER",
+      "screens": [
+        {
+          "screen_id": "PASS_001",
+          "screen_name": "Passenger Home",
+          "route": "/passenger/home",
+          "is_main_screen": true,
+          "features": {
+            "common": [
+              "Search bar for destinations",
+              "Recent destinations",
+              "Current location display",
+              "Bottom navigation"
+            ]
+          },
+          "ui_variants": {
+            "simple_mode": {
+              "features": [
+                "Large search bar",
+                "2-3 large destination cards",
+                "Large 'Find on Map' button",
+                "Large 'My Location' button"
+              ],
+              "bottom_navigation": [
+                {
+                  "id": "home",
+                  "icon": "home",
+                  "label": "Home",
+                  "route": "/passenger/home"
+                },
+                {
+                  "id": "map",
+                  "icon": "map",
+                  "label": "Map",
+                  "route": "/passenger/map"
+                },
+                {
+                  "id": "settings",
+                  "icon": "settings",
+                  "label": "Settings",
+                  "route": "/passenger/settings"
+                }
+              ]
+            },
+            "modern_mode": {
+              "features": [
+                "Compact search bar with icon",
+                "Carousel of recent destinations",
+                "Quick action chips",
+                "Collapsible map preview"
+              ],
+              "quick_actions": [
+                "Nearby Buses",
+                "Saved Places",
+                "Routes"
+              ],
+              "bottom_navigation": [
+                {
+                  "id": "home",
+                  "icon": "home",
+                  "label": "Home",
+                  "route": "/passenger/home"
+                },
+                {
+                  "id": "search",
+                  "icon": "search",
+                  "label": "Search",
+                  "route": "/passenger/search"
+                },
+                {
+                  "id": "map",
+                  "icon": "map",
+                  "label": "Map",
+                  "route": "/passenger/map"
+                },
+                {
+                  "id": "profile",
+                  "icon": "person",
+                  "label": "Profile",
+                  "route": "/passenger/profile"
+                }
+              ]
+            }
+          },
+          "navigation_targets": {
+            "search_bar": "/passenger/search",
+            "recent_destination": "/passenger/routes-buses",
+            "find_on_map": "/passenger/map?mode=pin",
+            "my_location": "/passenger/nearby-buses"
+          }
+        },
+        {
+          "screen_id": "PASS_002",
+          "screen_name": "Destination Search",
+          "route": "/passenger/search",
+          "features": [
+            "Text search with autocomplete",
+            "Voice search support",
+            "Recent searches list",
+            "Popular destinations",
+            "Category filters",
+            "Clear/cancel button"
+          ],
+          "categories": [
+            "Schools",
+            "Hospitals",
+            "Shopping",
+            "Transport Hubs"
+          ],
+          "components": {
+            "search_input": {
+              "type": "text",
+              "autocomplete": true,
+              "voice_enabled": true
+            },
+            "suggestions_list": {
+              "source": "backend_api",
+              "max_results": 10
+            },
+            "recent_searches": {
+              "storage": "local",
+              "max_items": 5
+            }
+          },
+          "actions": [
+            {
+              "action": "select_destination",
+              "next_screen": "/passenger/routes-buses"
+            },
+            {
+              "action": "show_on_map",
+              "next_screen": "/passenger/map?result=marked"
+            }
+          ]
+        },
+        {
+          "screen_id": "PASS_003",
+          "screen_name": "Map Screen",
+          "route": "/passenger/map",
+          "features": [
+            "Full-screen Google Maps",
+            "Current location marker",
+            "Pin/search toggle",
+            "Map type selector",
+            "Zoom controls",
+            "Nearby bus markers"
+          ],
+          "modes": {
+            "pin_mode": {
+              "enabled": true,
+              "features": [
+                "Long-press to drop pin",
+                "Pin destination button"
+              ],
+              "action": {
+                "button": "Pin Destination",
+                "next_screen": "/passenger/routes-buses"
+              }
+            },
+            "browse_mode": {
+              "enabled": true,
+              "features": [
+                "View live bus locations",
+                "Tap bus for details",
+                "Tap route for info"
+              ],
+              "interactions": {
+                "bus_marker_tap": "show_bottom_sheet",
+                "route_line_tap": "/passenger/route-details"
+              }
+            }
+          },
+          "map_settings": {
+            "provider": "Google Maps SDK",
+            "types": ["normal", "satellite"],
+            "zoom_levels": {
+              "min": 10,
+              "max": 20,
+              "default": 15
+            }
+          }
+        },
+        {
+          "screen_id": "PASS_004",
+          "screen_name": "Routes & Buses",
+          "route": "/passenger/routes-buses",
+          "features": [
+            "Destination name and address",
+            "Map with all routes",
+            "Scrollable route cards",
+            "Filter and sort options"
+          ],
+          "route_card": {
+            "elements": [
+              "Route number and name",
+              "Next 3 buses with arrival times",
+              "Crowd level indicator",
+              "Distance from location",
+              "View route details button"
+            ],
+            "bus_info": {
+              "arrival_time": {
+                "type": "dynamic",
+                "states": ["live", "predicted"]
+              },
+              "crowd_level": {
+                "values": ["less_crowded", "moderately_crowded", "highly_crowded"],
+                "display": "color_coded_icon"
+              }
+            }
+          },
+          "filters": {
+            "status": ["Active Now", "All Routes"],
+            "sort": ["Nearest First", "Fastest First"]
+          },
+          "actions": {
+            "tap_route_card": "/passenger/route-details",
+            "tap_bus": "/passenger/bus-tracking",
+            "swipe_right": "save_to_favorites"
+          }
+        },
+        {
+          "screen_id": "PASS_005",
+          "screen_name": "Route Details",
+          "route": "/passenger/route-details",
+          "features": [
+            "Route number and name header",
+            "Route path on map",
+            "All stops list with details",
+            "Active buses on route",
+            "Track bus button",
+            "Save route button"
+          ],
+          "stops_list": {
+            "fields": [
+              "stop_name",
+              "distance_from_destination",
+              "estimated_time"
+            ]
+          },
+          "active_buses": {
+            "display": "mini_cards",
+            "info": ["bus_number", "arrival_time", "crowd_level"]
+          },
+          "actions": {
+            "tap_bus": "/passenger/bus-tracking",
+            "tap_stop": "show_bottom_sheet_stop_details",
+            "track_bus": "select_bus_then_navigate"
+          }
+        },
+        {
+          "screen_id": "PASS_006",
+          "screen_name": "Bus Tracking",
+          "route": "/passenger/bus-tracking",
+          "key_feature": true,
+          "features": [
+            "Live map with bus marker",
+            "Route path visualization",
+            "Destination marker",
+            "Draggable info bottom sheet",
+            "Notification toggle"
+          ],
+          "map_elements": {
+            "bus_marker": {
+              "moving": true,
+              "update_interval_seconds": 10
+            },
+            "user_location": true,
+            "route_path": true,
+            "destination_marker": true
+          },
+          "info_card": {
+            "type": "bottom_sheet",
+            "draggable": true,
+            "fields": [
+              {
+                "field": "bus_number",
+                "style": "prominent"
+              },
+              {
+                "field": "route_name",
+                "style": "secondary"
+              },
+              {
+                "field": "arrival_time",
+                "style": "large_prominent",
+                "indicator": "live_or_predicted"
+              },
+              {
+                "field": "crowd_level",
+                "display": "visual_and_text"
+              },
+              {
+                "field": "distance_to_location",
+                "unit": "meters_or_kilometers"
+              }
+            ],
+            "buttons": [
+              {
+                "id": "report_crowd",
+                "label": "Report Crowd",
+                "action": "show_crowd_selector"
+              },
+              {
+                "id": "off_route_guidance",
+                "label": "Get Off-Route Guidance",
+                "action": "show_guidance_sheet",
+                "conditional": "user_off_route"
+              }
+            ]
+          },
+          "notification": {
+            "toggle": "notify_when_near",
+            "trigger_minutes_before": 5
+          },
+          "update_mode": {
+            "online": {
+              "interval_seconds": 10,
+              "type": "live"
+            },
+            "offline": {
+              "type": "predicted",
+              "source": "historical_data"
+            }
+          }
+        },
+        {
+          "screen_id": "PASS_007",
+          "screen_name": "Off-Route Guidance",
+          "route": "/passenger/off-route-guidance",
+          "display_type": "bottom_sheet",
+          "features": [
+            "Distance to nearest bus road",
+            "Walking direction with arrow",
+            "Street name indicator",
+            "Mini map",
+            "Next bus arrival time",
+            "Navigate button"
+          ],
+          "trigger_condition": {
+            "distance_from_route": ">100m"
+          },
+          "content": {
+            "heading": "You are off the bus route",
+            "distance": {
+              "display": "large_text",
+              "unit": "meters"
+            },
+            "direction": {
+              "format": "Walk towards [Street Name]",
+              "arrow_icon": true
+            },
+            "mini_map": {
+              "show_user_location": true,
+              "show_nearest_road": true
+            },
+            "next_bus": {
+              "display": "arrival_time_from_nearest_stop"
+            }
+          },
+          "actions": [
+            {
+              "action": "navigate",
+              "opens": "google_maps_app",
+              "intent": "walking_directions"
+            },
+            {
+              "action": "dismiss",
+              "returns_to": "/passenger/bus-tracking"
+            }
+          ]
+        },
+        {
+          "screen_id": "PASS_008",
+          "screen_name": "Nearby Buses",
+          "route": "/passenger/nearby-buses",
+          "features": [
+            "Map with buses in radius",
+            "Current location centered",
+            "Filter by route",
+            "List view toggle",
+            "Refresh button"
+          ],
+          "map_settings": {
+            "radius_km": 2,
+            "center": "user_location"
+          },
+          "bus_display": {
+            "fields": [
+              "route_number",
+              "direction",
+              "distance_from_user",
+              "crowd_level"
+            ]
+          },
+          "views": {
+            "map_view": {
+              "default": true,
+              "markers": "buses"
+            },
+            "list_view": {
+              "sortable": true,
+              "filter": "by_route"
+            }
+          },
+          "actions": {
+            "tap_bus": "/passenger/bus-tracking",
+            "toggle_view": "switch_map_list",
+            "filter": "show_route_selector"
+          }
+        },
+        {
+          "screen_id": "PASS_009",
+          "screen_name": "Crowd Reporting",
+          "route": "/passenger/crowd-report",
+          "display_type": "bottom_sheet",
+          "features": [
+            "Simple heading",
+            "Three clear crowd options",
+            "Submit button",
+            "Confirmation message"
+          ],
+          "crowd_options": [
+            {
+              "level": "less_crowded",
+              "icon": "green_circle",
+              "emoji": "🟢",
+              "label": "Less Crowded"
+            },
+            {
+              "level": "moderately_crowded",
+              "icon": "yellow_circle",
+              "emoji": "🟡",
+              "label": "Moderately Crowded"
+            },
+            {
+              "level": "highly_crowded",
+              "icon": "red_circle",
+              "emoji": "🔴",
+              "label": "Highly Crowded"
+            }
+          ],
+          "flow": {
+            "user_selects": "crowd_level",
+            "taps_submit": true,
+            "backend_action": "POST /api/crowd-report",
+            "show_message": "Thank you for helping others!",
+            "auto_close_seconds": 2
+          }
+        },
+        {
+          "screen_id": "PASS_010",
+          "screen_name": "Settings",
+          "route": "/passenger/settings",
+          "features": [
+            "User profile section",
+            "UI mode toggle",
+            "Language selector",
+            "Theme toggle",
+            "Notifications settings",
+            "Saved places",
+            "Measurement units",
+            "Clear cache",
+            "App version",
+            "Logout"
+          ],
+          "settings_groups": [
+            {
+              "group": "profile",
+              "items": [
+                {
+                  "type": "display",
+                  "fields": ["name", "email", "photo"]
+                }
+              ]
+            },
+            {
+              "group": "appearance",
+              "items": [
+                {
+                  "key": "ui_mode",
+                  "type": "toggle",
+                  "options": ["Simple", "Modern"]
+                },
+                {
+                  "key": "language",
+                  "type": "selector",
+                  "options": ["Sinhala", "Tamil", "English"]
+                },
+                {
+                  "key": "theme",
+                  "type": "toggle",
+                  "options": ["Light", "Dark", "Auto"]
+                }
+              ]
+            },
+            {
+              "group": "preferences",
+              "items": [
+                {
+                  "key": "notifications",
+                  "type": "navigation",
+                  "route": "/passenger/notification-settings"
+                },
+                {
+                  "key": "saved_places",
+                  "type": "navigation",
+                  "route": "/passenger/saved-places"
+                },
+                {
+                  "key": "units",
+                  "type": "selector",
+                  "options": ["Kilometers", "Miles"]
+                }
+              ]
+            },
+            {
+              "group": "data",
+              "items": [
+                {
+                  "key": "clear_cache",
+                  "type": "action",
+                  "confirmation_required": true
+                }
+              ]
+            },
+            {
+              "group": "about",
+              "items": [
+                {
+                  "key": "app_version",
+                  "type": "display",
+                  "value": "1.0.0"
+                }
+              ]
+            },
+            {
+              "group": "account",
+              "items": [
+                {
+                  "key": "logout",
+                  "type": "action",
+                  "confirmation_required": true,
+                  "action": "logout_and_navigate_to_login"
+                }
+              ]
+            }
+          ],
+          "auto_save": true
+        }
+      ]
+    },
+    "driver_flow": {
+      "flow_id": "DRIVER_FLOW",
+      "role_required": "DRIVER",
+      "screens": [
+        {
+          "screen_id": "DRV_001",
+          "screen_name": "Driver Home",
+          "route": "/driver/home",
+          "is_main_screen": true,
+          "features": [
+            "Driver profile display",
+            "Assigned route card",
+            "Auto-tracking status",
+            "Today's statistics",
+            "Bottom navigation"
+          ],
+          "profile_section": {
+            "fields": ["name", "photo"]
+          },
+          "route_card": {
+            "fields": [
+              "route_number",
+              "route_name",
+              "total_stops",
+              "operating_hours"
+            ],
+            "style": "prominent"
+          },
+          "status_indicator": {
+            "states": [
+              {
+                "state": "active",
+                "icon": "green_circle",
+                "emoji": "🟢",
+                "label": "Active",
+                "description": "tracking on"
+              },
+              {
+                "state": "idle",
+                "icon": "yellow_circle",
+                "emoji": "🟡",
+                "label": "Idle",
+                "description": "stopped temporarily"
+              },
+              {
+                "state": "offline",
+                "icon": "white_circle",
+                "emoji": "⚪",
+                "label": "Offline",
+                "description": "not tracking"
+              }
+            ]
+          },
+          "tracking_message": {
+            "text": "Your location is being shared automatically",
+            "show_last_update": true
+          },
+          "stats_card": {
+            "fields": [
+              "trips_completed_today",
+              "hours_active_today",
+              "distance_covered_today"
+            ]
+          },
+          "bottom_navigation": [
+            {
+              "id": "home",
+              "icon": "home",
+              "label": "Home",
+              "route": "/driver/home"
+            },
+            {
+              "id": "history",
+              "icon": "chart",
+              "label": "History",
+              "route": "/driver/history"
+            },
+            {
+              "id": "settings",
+              "icon": "settings",
+              "label": "Settings",
+              "route": "/driver/settings"
+            }
+          ],
+          "automatic_tracking": {
+            "manual_buttons": false,
+            "auto_start": true,
+            "auto_stop": true
+          }
+        },
+        {
+          "screen_id": "DRV_002",
+          "screen_name": "Driver Route View",
+          "route": "/driver/route-view",
+          "features": [
+            "Full route map",
+            "All stops marked",
+            "Current bus position",
+            "Route information",
+            "Stop details list"
+          ],
+          "map_display": {
+            "route_path": true,
+            "stops_markers": true,
+            "current_position": {
+              "show_if": "tracking_active"
+            }
+          },
+          "route_info": {
+            "fields": [
+              "total_distance",
+              "number_of_stops",
+              "estimated_trip_duration"
+            ]
+          },
+          "trigger": {
+            "auto_open_when": "tracking_starts",
+            "manual_access": true
+          },
+          "actions": {
+            "tap_stop": "show_stop_details",
+            "back_to_home": "when_idle"
+          }
+        },
+        {
+          "screen_id": "DRV_003",
+          "screen_name": "Driver History",
+          "route": "/driver/history",
+          "features": [
+            "Calendar view",
+            "Past trips list",
+            "Date range filter",
+            "Export functionality"
+          ],
+          "components": {
+            "calendar": {
+              "type": "month_view",
+              "highlight_trip_days": true
+            },
+            "trips_list": {
+              "fields": [
+                "date_time",
+                "route",
+                "duration",
+                "distance",
+                "start_end_locations"
+              ],
+              "sortable": true
+            }
+          },
+          "filters": {
+            "date_range": {
+              "presets": ["Today", "This Week", "This Month", "Custom"]
+            }
+          },
+          "actions": {
+            "tap_trip": "/driver/trip-details",
+            "export": "generate_pdf_or_csv"
+          }
+        },
+        {
+          "screen_id": "DRV_004",
+          "screen_name": "Trip Details",
+          "route": "/driver/trip-details",
+          "features": [
+            "Trip map with route taken",
+            "Trip statistics",
+            "Timeline of stops"
+          ],
+          "map": {
+            "show_actual_route": true,
+            "show_stops_completed": true
+          },
+          "statistics": {
+            "fields": [
+              "start_time",
+              "end_time",
+              "total_duration",
+              "distance_covered",
+              "average_speed",
+              "stops_completed"
+            ]
+          },
+          "timeline": {
+            "type": "scrollable_list",
+            "items": "stops_with_timestamps"
+          },
+          "mode": "view_only"
+        },
+        {
+          "screen_id": "DRV_005",
+          "screen_name": "Driver Settings",
+          "route": "/driver/settings",
+          "features": [
+            "Profile information",
+            "Assigned route (read-only)",
+            "Battery optimization tips",
+            "Permission status",
+            "App version",
+            "Logout"
+          ],
+          "settings_groups": [
+            {
+              "group": "profile",
+              "items": [
+                {
+                  "type": "display",
+                  "fields": ["name", "email", "phone"]
+                }
+              ]
+            },
+            {
+              "group": "route",
+              "items": [
+                {
+                  "key": "assigned_route",
+                  "type": "display",
+                  "editable": false,
+                  "note": "Contact admin to change"
+                }
+              ]
+            },
+            {
+              "group": "optimization",
+              "items": [
+                {
+                  "key": "battery_tips",
+                  "type": "information",
+                  "tips": [
+                    "Enable battery optimization exclusion",
+                    "Keep GPS accuracy high",
+                    "Disable unused features"
+                  ]
+                }
+              ]
+            },
+            {
+              "group": "permissions",
+              "items": [
+                {
+                  "key": "background_tracking",
+                  "type": "status",
+                  "action": "manage_permission"
+                },
+                {
+                  "key": "location",
+                  "type": "status",
+                  "action": "manage_permission"
+                }
+              ]
+            },
+            {
+              "group": "about",
+              "items": [
+                {
+                  "key": "app_version",
+                  "type": "display",
+                  "value": "1.0.0"
+                }
+              ]
+            },
+            {
+              "group": "account",
+              "items": [
+                {
+                  "key": "logout",
+                  "type": "action",
+                  "confirmation_required": true,
+                  "action": "logout_and_navigate_to_login"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
