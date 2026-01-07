@@ -130,49 +130,81 @@ export default function MapScreen() {
   const fetchLiveBuses = async () => {
     try {
       setIsLoadingBuses(true);
-      const response = await fetch(`${API_BASE_URL}/gps/buses/live`);
-      const data = await response.json();
+      console.log('Fetching live buses from:', `${API_BASE_URL}/gps/buses/live`);
       
-      if (data.success && data.data) {
-        const buses: LiveBus[] = data.data.map((busData: any) => {
-          // Handle both legacy and new data formats
-          const busId = busData.busId || busData.id;
-          const routeNumber = busId ? busId.split('_')[1] || 'Unknown' : 'Unknown';
-          const isOnline = busData.isOnline !== undefined ? busData.isOnline : 
-                          (busData.lastSeen ? (Date.now() - busData.lastSeen) < 120000 : true);
-          
-          return {
-            id: busId,
-            route: routeNumber,
-            direction: getRouteDirection(busData.routeId),
-            title: `Bus ${routeNumber} to ${getRouteDirection(busData.routeId)}`,
-            latitude: busData.latitude || busData.location?.latitude || 0,
-            longitude: busData.longitude || busData.location?.longitude || 0,
-            speed: busData.speed || busData.location?.speed || 0,
-            heading: busData.heading || busData.location?.heading || 0,
-            status: busData.status || (isOnline ? 'active' : 'offline'),
-            routeId: busData.routeId,
-            nextStop: getNextStop(busData.routeId),
-            eta: calculateETA(
-              busData.latitude || busData.location?.latitude || 0, 
-              busData.longitude || busData.location?.longitude || 0, 
-              busData.speed || busData.location?.speed || 0
-            ),
-            lastUpdate: busData.lastUpdate || busData.lastSeen || new Date().toISOString(),
-            driverId: busData.driverId,
-            accuracy: busData.accuracy || busData.location?.accuracy,
-            isOnline: isOnline,
-          };
-        });
+      const response = await fetch(`${API_BASE_URL}/gps/buses/live`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Live buses response:', data);
+      
+      if (data.success && data.data && Array.isArray(data.data)) {
+        const buses: LiveBus[] = data.data
+          .filter((busData: any) => {
+            // Filter out buses without valid coordinates
+            const lat = busData.latitude || busData.location?.coordinates?.[1] || busData.location?.latitude;
+            const lng = busData.longitude || busData.location?.coordinates?.[0] || busData.location?.longitude;
+            return lat !== undefined && lat !== 0 && lng !== undefined && lng !== 0;
+          })
+          .map((busData: any) => {
+            // Handle both legacy and new data formats (including GeoJSON)
+            const busId = busData.busId || busData.id || 'unknown';
+            const routeId = busData.routeId || busData.route || 'unknown';
+            const routeNumber = routeId.replace('route_', '').replace('Route-', '');
+            
+            // Extract coordinates from various formats
+            let latitude = busData.latitude;
+            let longitude = busData.longitude;
+            
+            // Check for GeoJSON format
+            if (busData.location?.coordinates) {
+              longitude = busData.location.coordinates[0];
+              latitude = busData.location.coordinates[1];
+            } else if (busData.location?.latitude) {
+              latitude = busData.location.latitude;
+              longitude = busData.location.longitude;
+            }
+            
+            const timestamp = busData.timestamp || busData.lastUpdate || busData.lastSeen || Date.now();
+            const timestampDate = new Date(timestamp).getTime();
+            const isRecent = (Date.now() - timestampDate) < 120000; // Within 2 minutes
+            const isOnline = busData.isOnline !== undefined ? busData.isOnline : isRecent;
+            
+            const speed = busData.speed || 0;
+            const heading = busData.heading || 0;
+            
+            return {
+              id: busId,
+              route: routeNumber,
+              direction: getRouteDirection(routeId),
+              title: `Bus ${routeNumber} - ${getRouteDirection(routeId)}`,
+              latitude: latitude || 0,
+              longitude: longitude || 0,
+              speed: speed,
+              heading: heading,
+              status: busData.status || (isOnline ? 'active' : 'offline'),
+              routeId: routeId,
+              nextStop: getNextStop(routeId),
+              eta: calculateETA(latitude || 0, longitude || 0, speed),
+              lastUpdate: new Date(timestamp).toISOString(),
+              driverId: busData.driverId,
+              accuracy: busData.accuracy || 0,
+              isOnline: isOnline,
+            };
+          });
         
+        console.log(`Loaded ${buses.length} active buses`);
         setLiveBuses(buses);
+        setLastUpdateTime(new Date());
       } else {
-        // If API call succeeds but no data, show empty state
+        console.warn('No bus data in response');
         setLiveBuses([]);
       }
     } catch (error) {
       console.error('Failed to fetch live buses:', error);
-      // Show error state - no fallback data
       setLiveBuses([]);
     } finally {
       setIsLoadingBuses(false);
@@ -403,12 +435,12 @@ export default function MapScreen() {
     }
   };
 
-  // Auto-refresh live bus data (fallback when WebSocket is not connected)
+  // Auto-refresh live bus data every 10 seconds
   useEffect(() => {
+    if (isPinMode) return;
+    
     const interval = setInterval(() => {
-      if (!isPinMode && !websocketService.isConnected()) {
-        fetchLiveBuses();
-      }
+      fetchLiveBuses();
     }, 10000); // Update every 10 seconds
 
     return () => clearInterval(interval);
@@ -416,7 +448,18 @@ export default function MapScreen() {
 
   useEffect(() => {
     requestLocationPermission();
+    // Initial fetch of live buses
+    if (!isPinMode) {
+      fetchLiveBuses();
+    }
   }, []);
+
+  // Fetch live buses when mode changes
+  useEffect(() => {
+    if (!isPinMode) {
+      fetchLiveBuses();
+    }
+  }, [isPinMode]);
 
   const requestLocationPermission = async () => {
     try {
@@ -824,15 +867,28 @@ export default function MapScreen() {
                 </Text>
               </View>
             </View>
-            <Text style={styles.browseInfoSubtitle}>
-              Tap on a bus to track it • Routes: {showRoutes ? 'Shown' : 'Hidden'} • {getConnectionStatusText()}
-            </Text>
-            {isLoadingBuses && (
-              <Text style={styles.loadingText}>Updating bus locations...</Text>
-            )}
+            <View style={styles.infoFooter}>
+              <Text style={styles.browseInfoSubtitle}>
+                Tap on a bus to track it • {liveBuses.length} buses visible
+              </Text>
+              <TouchableOpacity 
+                style={styles.refreshButton}
+                onPress={fetchLiveBuses}
+                disabled={isLoadingBuses}
+              >
+                <Text style={styles.refreshButtonText}>
+                  {isLoadingBuses ? '⟳' : '↻'}
+                </Text>
+              </TouchableOpacity>
+            </View>
             {lastUpdateTime && (
-              <Text style={styles.loadingText}>
+              <Text style={styles.lastUpdateText}>
                 Last update: {lastUpdateTime.toLocaleTimeString()}
+              </Text>
+            )}
+            {liveBuses.length === 0 && !isLoadingBuses && (
+              <Text style={styles.noBusesText}>
+                No active buses found. Pull to refresh.
               </Text>
             )}
           </View>
@@ -1026,6 +1082,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.text.secondary,
     textAlign: 'center',
+  },
+  infoFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  refreshButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refreshButtonText: {
+    fontSize: 18,
+    color: Colors.primary,
+    fontWeight: 'bold',
+  },
+  lastUpdateText: {
+    fontSize: 10,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  noBusesText: {
+    fontSize: 12,
+    color: Colors.warning,
+    textAlign: 'center',
+    marginTop: 8,
+    fontWeight: '500',
   },
   // Enhanced Bus Icon Styles
   busIconContainer: {
