@@ -456,13 +456,37 @@ export class GPSService {
   // ==================== NETWORK COMMUNICATION ====================
 
   private async sendLocationUpdate(locationData: LocationData): Promise<void> {
-    if (!this.config) return;
-
-    // Validate session before sending location update
-    if (this.config.sessionId && !await this.validateCurrentSession()) {
-      console.warn('Session invalid, cannot send location update');
-      this.status.connectionStatus = 'disconnected';
+    if (!this.config) {
+      console.error('GPS config not set, cannot send location update');
       return;
+    }
+
+    // Get current session ID from storage if not in config
+    if (!this.config.sessionId) {
+      try {
+        const sessionData = await AsyncStorage.getItem('@driver_session');
+        if (sessionData) {
+          const session = JSON.parse(sessionData);
+          this.config.sessionId = session.sessionId;
+        }
+      } catch (error) {
+        console.warn('Could not retrieve session ID from storage');
+      }
+    }
+
+    // Validate session before sending location update (skip validation if no sessionId yet)
+    if (this.config.sessionId) {
+      try {
+        const isValid = await this.validateCurrentSession();
+        if (!isValid) {
+          console.warn('Session invalid, cannot send location update');
+          this.status.connectionStatus = 'disconnected';
+          return;
+        }
+      } catch (error) {
+        console.warn('Session validation failed, but continuing with location update:', error);
+        // Continue anyway - the backend will handle invalid sessions
+      }
     }
 
     const locationUpdate: LocationUpdate = {
@@ -475,7 +499,7 @@ export class GPSService {
       speed: locationData.speed,
       accuracy: locationData.accuracy,
       status: locationData.status,
-      sessionId: this.config.sessionId, // Include session ID in location update
+      sessionId: this.config.sessionId || 'temp_session_' + Date.now(), // Use temp session if not available
     };
 
     let retryCount = 0;

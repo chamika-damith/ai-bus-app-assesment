@@ -7,64 +7,121 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Clock, MapPin, X } from 'lucide-react-native';
+import { ArrowLeft, Clock, MapPin, X, Bus, Navigation, Radio, RefreshCw } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
 import { getAPIClient } from '../../lib/api';
 
-interface BusStop {
-  id: string;
-  name: string;
-  time: string;
-  status: 'current' | 'next' | 'future' | 'passed';
+interface BusInfo {
+  busId: string;
+  driverId: string;
+  driverName: string;
+  routeId: string;
+  isTracking: boolean;
+  lastUpdate: string;
+  currentLocation?: {
+    latitude: number;
+    longitude: number;
+  };
+  speed?: number;
+  heading?: number;
 }
 
 export default function RouteDetails() {
   const params = useLocalSearchParams();
   const routeId = params.routeId as string;
   const routeNumber = params.routeNumber as string || routeId;
-  const [busStops, setBusStops] = useState<BusStop[]>([]);
+  const [buses, setBuses] = useState<BusInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const apiClient = getAPIClient();
 
   useEffect(() => {
-    loadRouteDetails();
+    loadRouteBuses();
+    
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(() => {
+      loadRouteBuses(true);
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, [routeId]);
 
-  const loadRouteDetails = async () => {
+  const loadRouteBuses = async (isRefresh = false) => {
     try {
-      setLoading(true);
-      // In a real app, fetch route details from backend
-      // For now, show message that data needs to be loaded
-      setBusStops([]);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      console.log('Loading buses for route:', routeNumber);
+
+      // Get all live buses
+      const API_BASE_URL = 'http://192.168.204.176:5001/api';
+      const response = await fetch(`${API_BASE_URL}/gps/buses/route/${encodeURIComponent(routeNumber)}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Route buses response:', data);
+
+      if (data.success && Array.isArray(data.data)) {
+        const busesData: BusInfo[] = data.data.map((bus: any) => ({
+          busId: bus.busId,
+          driverId: bus.driverId,
+          driverName: bus.driverName || 'Unknown Driver',
+          routeId: bus.routeId,
+          isTracking: bus.isTracking || false,
+          lastUpdate: bus.lastUpdate || new Date().toISOString(),
+          currentLocation: bus.location?.coordinates ? {
+            latitude: bus.location.coordinates[1],
+            longitude: bus.location.coordinates[0],
+          } : undefined,
+          speed: bus.speed || 0,
+          heading: bus.heading || 0,
+        }));
+        
+        setBuses(busesData);
+      } else {
+        setBuses([]);
+      }
     } catch (error) {
-      console.error('Failed to load route details:', error);
+      console.error('Failed to load route buses:', error);
+      setBuses([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const getStopStatusStyle = (status: string) => {
-    switch (status) {
-      case 'current':
-        return styles.currentStop;
-      case 'next':
-        return styles.nextStop;
-      default:
-        return styles.futureStop;
+
+  const handleBusClick = (bus: BusInfo) => {
+    if (bus.isTracking && bus.currentLocation) {
+      // Navigate to live tracking screen
+      router.push(`/passenger/bus-tracking?busId=${bus.busId}&routeId=${bus.routeId}`);
+    } else {
+      alert('This bus is not currently being tracked');
     }
   };
 
-  const getStopStatusColor = (status: string) => {
-    switch (status) {
-      case 'current':
-        return Colors.primary;
-      case 'next':
-        return Colors.warning;
-      default:
-        return Colors.gray[400];
-    }
+  const formatLastUpdate = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    return date.toLocaleDateString();
   };
 
   return (
@@ -76,86 +133,136 @@ export default function RouteDetails() {
         >
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{routeNumber}</Text>
-        <TouchableOpacity style={styles.closeButton}>
-          <X size={24} color={Colors.text.primary} />
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>Route {routeNumber}</Text>
+          <Text style={styles.headerSubtitle}>
+            {buses.length} bus{buses.length !== 1 ? 'es' : ''} available
+          </Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.refreshButton}
+          onPress={() => loadRouteBuses(true)}
+          disabled={refreshing}
+        >
+          <RefreshCw size={20} color={Colors.primary} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView 
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadRouteBuses(true)}
+            colors={[Colors.primary]}
+          />
+        }
+      >
         {/* Route Info Header */}
+        <View style={styles.routeInfoHeader}>
+          <View style={styles.routeIconContainer}>
+            <Navigation size={24} color={Colors.primary} />
+          </View>
+          <View style={styles.routeInfoText}>
+            <Text style={styles.routeTitle}>Route {routeNumber}</Text>
+            <Text style={styles.routeSubtitle}>
+              {loading ? 'Loading...' : `${buses.length} active bus${buses.length !== 1 ? 'es' : ''}`}
+            </Text>
+          </View>
+        </View>
+
+        {/* Buses List */}
         {loading ? (
-          <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
-        ) : busStops.length > 0 ? (
-          <View style={styles.routeInfoHeader}>
-            <Text style={styles.routeTitle}>{routeNumber} Bus Route</Text>
-            <Text style={styles.routeSubtitle}>{busStops.length} stops</Text>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.loadingText}>Loading buses...</Text>
+          </View>
+        ) : buses.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Bus size={48} color={Colors.gray[300]} />
+            <Text style={styles.emptyTitle}>No buses available</Text>
+            <Text style={styles.emptySubtitle}>
+              No buses are currently active on this route
+            </Text>
+            <Button
+              title="Refresh"
+              onPress={() => loadRouteBuses()}
+              style={styles.refreshEmptyButton}
+            />
           </View>
         ) : (
-          <View style={styles.routeInfoHeader}>
-            <Text style={styles.routeTitle}>{routeNumber} Bus Route</Text>
-            <Text style={styles.routeSubtitle}>No route data available</Text>
-          </View>
-        )}
-
-        {/* Bus Stops Timeline */}
-        <View style={styles.timelineContainer}>
-          {busStops.map((stop, index) => (
-            <View key={stop.id} style={styles.timelineItem}>
-              <View style={styles.timelineLeft}>
-                <View style={[
-                  styles.timelineDot,
-                  { backgroundColor: getStopStatusColor(stop.status) }
-                ]} />
-                {index < busStops.length - 1 && (
-                  <View style={styles.timelineLine} />
-                )}
-              </View>
-              
-              <TouchableOpacity 
-                style={[styles.stopCard, getStopStatusStyle(stop.status)]}
-                onPress={() => {
-                  // Handle stop selection or show more details
-                }}
+          <View style={styles.busesList}>
+            <Text style={styles.sectionTitle}>Available Buses</Text>
+            {buses.map((bus, index) => (
+              <TouchableOpacity
+                key={`${bus.busId}-${index}`}
+                style={styles.busCard}
+                onPress={() => handleBusClick(bus)}
+                activeOpacity={0.7}
               >
-                <View style={styles.stopInfo}>
-                  <Text style={styles.stopName}>{stop.name}</Text>
-                  <Text style={styles.stopTime}>{stop.time}</Text>
+                <View style={styles.busCardHeader}>
+                  <View style={styles.busIconContainer}>
+                    <Bus size={24} color={Colors.white} />
+                  </View>
+                  <View style={styles.busCardInfo}>
+                    <Text style={styles.busId}>Bus {bus.busId}</Text>
+                    <Text style={styles.driverName}>{bus.driverName}</Text>
+                  </View>
+                  <View style={styles.trackingStatusContainer}>
+                    {bus.isTracking ? (
+                      <>
+                        <View style={styles.liveIndicator}>
+                          <Radio size={12} color={Colors.success} />
+                        </View>
+                        <Text style={styles.liveText}>LIVE</Text>
+                      </>
+                    ) : (
+                      <Text style={styles.offlineText}>Offline</Text>
+                    )}
+                  </View>
                 </View>
-                
-                {stop.status === 'current' && (
-                  <View style={styles.currentBadge}>
-                    <Text style={styles.currentBadgeText}>Current</Text>
+
+                <View style={styles.busCardDetails}>
+                  <View style={styles.detailRow}>
+                    <Clock size={14} color={Colors.text.secondary} />
+                    <Text style={styles.detailText}>
+                      Updated: {formatLastUpdate(bus.lastUpdate)}
+                    </Text>
                   </View>
-                )}
-                
-                {stop.status === 'next' && (
-                  <View style={styles.nextBadge}>
-                    <Text style={styles.nextBadgeText}>Delayed</Text>
-                  </View>
-                )}
-                
-                {stop.status === 'future' && (
-                  <View style={styles.futureBadge}>
-                    <Text style={styles.futureBadgeText}>On time</Text>
+                  
+                  {bus.isTracking && bus.currentLocation && (
+                    <>
+                      <View style={styles.detailRow}>
+                        <MapPin size={14} color={Colors.text.secondary} />
+                        <Text style={styles.detailText}>
+                          Location: {bus.currentLocation.latitude.toFixed(4)}, {bus.currentLocation.longitude.toFixed(4)}
+                        </Text>
+                      </View>
+                      {bus.speed !== undefined && (
+                        <View style={styles.detailRow}>
+                          <Navigation size={14} color={Colors.text.secondary} />
+                          <Text style={styles.detailText}>
+                            Speed: {Math.round(bus.speed * 3.6)} km/h
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+                </View>
+
+                {bus.isTracking && (
+                  <View style={styles.busCardFooter}>
+                    <Text style={styles.tapToTrackText}>Tap to view live tracking →</Text>
                   </View>
                 )}
               </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-
-        {/* Action Button */}
-        <Button
-          title="View in real time"
-          onPress={() => router.push(`/passenger/bus-tracking?routeId=${routeId}`)}
-          style={styles.actionButton}
-        />
+            ))}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -167,36 +274,59 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
+    backgroundColor: Colors.white,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    backgroundColor: Colors.white,
   },
   backButton: {
     padding: 4,
+  },
+  headerTitleContainer: {
+    flex: 1,
+    marginHorizontal: 16,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  closeButton: {
-    padding: 4,
+  headerSubtitle: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginTop: 2,
+  },
+  refreshButton: {
+    padding: 8,
   },
   content: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingVertical: 20,
   },
   routeInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: Colors.white,
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
+  },
+  routeIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  routeInfoText: {
+    flex: 1,
   },
   routeTitle: {
     fontSize: 18,
@@ -208,120 +338,139 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text.secondary,
   },
-  timelineContainer: {
-    marginBottom: 30,
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
   },
-  timelineItem: {
-    flexDirection: 'row',
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  refreshEmptyButton: {
+    marginTop: 12,
+  },
+  busesList: {
+    flex: 1,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
     marginBottom: 16,
   },
-  timelineLeft: {
-    alignItems: 'center',
-    marginRight: 16,
-    width: 20,
-  },
-  timelineDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginTop: 8,
-  },
-  timelineLine: {
-    width: 2,
-    flex: 1,
-    backgroundColor: Colors.border,
-    marginTop: 8,
-  },
-  stopCard: {
-    flex: 1,
+  busCard: {
     backgroundColor: Colors.white,
     borderRadius: 12,
     padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  currentStop: {
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.primary,
+  busCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  nextStop: {
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.warning,
+  busIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  futureStop: {
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.gray[200],
-  },
-  stopInfo: {
+  busCardInfo: {
     flex: 1,
   },
-  stopName: {
+  busId: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
     marginBottom: 4,
   },
-  stopTime: {
-    fontSize: 12,
+  driverName: {
+    fontSize: 13,
     color: Colors.text.secondary,
   },
-  currentBadge: {
-    backgroundColor: Colors.primary,
+  trackingStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: 12,
+    backgroundColor: Colors.light,
   },
-  currentBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  nextBadge: {
-    backgroundColor: Colors.warning,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  nextBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  futureBadge: {
-    backgroundColor: Colors.success,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  futureBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  actionButton: {
-    marginBottom: 20,
-  },
-  emptyState: {
+  liveIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: Colors.success + '20',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    marginRight: 6,
   },
-  emptyText: {
-    fontSize: 16,
+  liveText: {
+    fontSize: 12,
     fontWeight: '600',
-    color: Colors.text.primary,
-    marginTop: 16,
+    color: Colors.success,
   },
-  emptySubtext: {
-    fontSize: 14,
+  offlineText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.gray[500],
+  },
+  busCardDetails: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  detailText: {
+    fontSize: 13,
     color: Colors.text.secondary,
-    marginTop: 8,
+    marginLeft: 8,
+  },
+  busCardFooter: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  tapToTrackText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.primary,
     textAlign: 'center',
   },
 });

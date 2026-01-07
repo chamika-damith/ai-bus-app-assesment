@@ -78,10 +78,23 @@ export default function BusTracking() {
   useEffect(() => {
     loadBusInfo();
     
-    // Set up auto-refresh every 30 seconds
-    const interval = setInterval(loadBusInfo, 30000);
+    // Set up auto-refresh every 10 seconds for live tracking
+    const interval = setInterval(() => {
+      if (busInfo?.isLive) {
+        loadBusInfo(true);
+      }
+    }, 10000); // Refresh every 10 seconds for live buses
+    
     return () => clearInterval(interval);
   }, [busId]);
+
+  // Separate effect to update map when busInfo changes
+  useEffect(() => {
+    if (busInfo?.isLive && busInfo.currentLocation) {
+      // Animate map to new position when location updates
+      console.log('Bus location updated:', busInfo.currentLocation);
+    }
+  }, [busInfo?.currentLocation.latitude, busInfo?.currentLocation.longitude]);
 
   const loadBusInfo = async (isRefresh = false) => {
     try {
@@ -98,32 +111,49 @@ export default function BusTracking() {
         // Get specific bus location using the correct API endpoint
         const API_BASE_URL = 'http://192.168.204.176:5001/api'; // Use same URL as map component
         const response = await fetch(`${API_BASE_URL}/gps/bus/${busId}/location`);
+        
+        if (!response.ok) {
+          throw new Error(`Bus not available (Status: ${response.status})`);
+        }
+        
         const busLocationData = await response.json();
         
         if (busLocationData.success && busLocationData.data) {
           const busData = busLocationData.data;
-          const routeNumber = busId.split('_')[1] || 'Unknown';
+          
+          // Extract route info from available data
+          const routeNumber = busData.routeId || busData.routeNumber || busId.split('_')[1] || 'Unknown';
+          
+          // Calculate more accurate arrival time based on actual speed and distance
+          const speed = busData.speed || 30; // Default 30 km/h if not available
+          const eta = calculateETA(busData.latitude, busData.longitude, speed);
           
           setBusInfo({
             id: busId,
             routeNumber: routeNumber,
-            routeName: `Route ${busData.routeId || routeNumber}`,
-            arrivalTime: busData.estimatedArrival || calculateETA(busData.latitude, busData.longitude, busData.speed || 0),
+            routeName: `Route ${routeNumber}`,
+            arrivalTime: eta,
             isLive: busData.isOnline !== false,
             crowdLevel: 'medium', // Default value - could be enhanced
-            distanceToUser: 0, // Would need user location to calculate
+            distanceToUser: calculateDistance(
+              busData.latitude, 
+              busData.longitude, 
+              6.9271, // User location (default Colombo)
+              79.8612
+            ),
             currentLocation: {
               latitude: busData.latitude || 0,
               longitude: busData.longitude || 0,
             },
             lastUpdate: busData.lastSeen ? new Date(busData.lastSeen).toLocaleString() : 'Just now',
-            speed: busData.speed || 0,
+            driverName: busData.driverName,
+            speed: speed,
           });
         } else {
           throw new Error(busLocationData.message || 'Bus not found or offline');
         }
       } else {
-        // Get online drivers from driver list API
+        // Get online drivers from driver list API (fallback)
         const drivers = await apiClient.getDrivers();
         const onlineDrivers = drivers.filter(d => d.isOnline || d.isActive);
         
@@ -142,7 +172,7 @@ export default function BusTracking() {
             arrivalTime: calculateETA(latitude, longitude, 30), // Default 30 km/h
             isLive: true,
             crowdLevel: 'medium',
-            distanceToUser: 0,
+            distanceToUser: calculateDistance(latitude, longitude, 6.9271, 79.8612),
             currentLocation: {
               latitude: latitude,
               longitude: longitude,
@@ -160,7 +190,11 @@ export default function BusTracking() {
       console.error('Error loading bus info:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load bus information';
       setError(errorMessage);
-      setBusInfo(null);
+      
+      // Don't clear busInfo on refresh error to maintain last known position
+      if (!isRefresh) {
+        setBusInfo(null);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -320,6 +354,9 @@ export default function BusTracking() {
           </View>
           <View style={styles.busHeaderInfo}>
             <Text style={styles.routeName}>{busInfo.routeName}</Text>
+            {busInfo.driverName && (
+              <Text style={styles.driverNameText}>Driver: {busInfo.driverName}</Text>
+            )}
             <View style={styles.statusRow}>
               <View style={styles.liveStatus}>
                 <View style={styles.liveStatusDot} />
@@ -327,6 +364,11 @@ export default function BusTracking() {
                   {busInfo.isLive ? 'Live tracking' : 'Predicted'}
                 </Text>
               </View>
+              {busInfo.speed !== undefined && busInfo.speed > 0 && (
+                <Text style={styles.speedText}>
+                  {Math.round(busInfo.speed * 3.6)} km/h
+                </Text>
+              )}
             </View>
           </View>
         </View>
@@ -338,6 +380,11 @@ export default function BusTracking() {
             <Text style={styles.arrivalTime}>{busInfo.arrivalTime}</Text>
             <Text style={styles.arrivalLabel}>arrival time</Text>
           </View>
+          {busInfo.lastUpdate && (
+            <Text style={styles.lastUpdateText}>
+              Last updated: {busInfo.lastUpdate}
+            </Text>
+          )}
         </View>
 
         {/* Bus Details */}
@@ -396,6 +443,18 @@ export default function BusTracking() {
             Get notified 5 minutes before arrival
           </Text>
         </TouchableOpacity>
+        
+        {/* Live Tracking Info */}
+        {busInfo.isLive && (
+          <View style={styles.liveTrackingInfo}>
+            <Text style={styles.liveTrackingText}>
+              🎯 Live GPS tracking enabled by driver
+            </Text>
+            <Text style={styles.liveTrackingSubtext}>
+              Location updates every 10 seconds
+            </Text>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -506,9 +565,15 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     marginBottom: 4,
   },
+  driverNameText: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   liveStatus: {
     flexDirection: 'row',
@@ -524,6 +589,12 @@ const styles = StyleSheet.create({
   liveStatusText: {
     fontSize: 12,
     color: Colors.text.secondary,
+  },
+  speedText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.primary,
+    marginLeft: 12,
   },
   arrivalSection: {
     alignItems: 'center',
@@ -545,6 +616,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text.secondary,
     marginTop: 4,
+  },
+  lastUpdateText: {
+    fontSize: 11,
+    color: Colors.text.secondary,
+    marginTop: 8,
   },
   detailsGrid: {
     flexDirection: 'row',
@@ -596,6 +672,24 @@ const styles = StyleSheet.create({
   },
   notificationSubtext: {
     fontSize: 12,
+    color: Colors.text.secondary,
+  },
+  liveTrackingInfo: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: Colors.success + '10',
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.success,
+  },
+  liveTrackingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.success,
+    marginBottom: 4,
+  },
+  liveTrackingSubtext: {
+    fontSize: 11,
     color: Colors.text.secondary,
   },
   loadingContainer: {

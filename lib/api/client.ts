@@ -530,6 +530,42 @@ export class BusTrackingAPIClient implements APIClient {
   }
 
   /**
+   * Get all buses on a specific route with live tracking status
+   */
+  async getBusesByRoute(routeId: string): Promise<BusLocation[]> {
+    try {
+      const response = await this.httpClient.get(`/gps/buses/route/${encodeURIComponent(routeId)}`);
+      
+      // Handle backend response format
+      const buses = response.data.data || response.data;
+
+      const busLocations: BusLocation[] = buses.map((bus: any) => ({
+        busId: bus.busId,
+        routeId: bus.routeId,
+        driverId: bus.driverId,
+        driverName: bus.driverName,
+        location: {
+          latitude: bus.location?.coordinates?.[1] || bus.location?.latitude || 0,
+          longitude: bus.location?.coordinates?.[0] || bus.location?.longitude || 0,
+          heading: bus.heading || 0,
+          speed: bus.speed || 0,
+          accuracy: bus.accuracy || 0,
+          timestamp: bus.lastUpdate || Date.now(),
+        },
+        isActive: bus.isTracking || false,
+        lastUpdate: bus.lastUpdate || new Date().toISOString(),
+      }));
+
+      return busLocations;
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Failed to get buses by route');
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Get bus location history
    */
   async getBusHistory(busId: string): Promise<LocationData[]> {
