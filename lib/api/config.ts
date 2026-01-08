@@ -137,6 +137,17 @@ export const API_ENDPOINTS = {
     GET_STATS: '/api/gps/admin/session-stats',
     FORCE_END: (sessionId: string) => `/api/gps/admin/session/${sessionId}`,
   },
+
+  // Routes
+  ROUTES: {
+    GET_ALL: '/api/routes',
+    GET_ONE: (routeId: string) => `/api/routes/${routeId}`,
+    CREATE: '/api/routes',
+    UPDATE: (routeId: string) => `/api/routes/${routeId}`,
+    DELETE: (routeId: string) => `/api/routes/${routeId}`,
+    GET_NEARBY: '/api/routes/nearby',
+    GET_STATS: '/api/routes/stats',
+  },
   
   // System
   SYSTEM: {

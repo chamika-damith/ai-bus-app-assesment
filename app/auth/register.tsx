@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,18 +7,32 @@ import {
   ScrollView,
   Alert,
   TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  FlatList,
 } from 'react-native';
 import { router } from 'expo-router';
-import { ChevronDown } from 'lucide-react-native';
+import { ChevronDown, Search, MapPin } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { useAuth, UserRole } from '../../context/AuthContext';
 import { Colors } from '../../constants/colors';
+import { getAPIClient } from '../../lib/api';
 
 const ROLES = [
   { label: 'Passenger', value: 'PASSENGER' as UserRole },
   { label: 'Driver', value: 'DRIVER' as UserRole },
 ];
+
+interface Route {
+  routeId: string;
+  routeNumber: string;
+  routeName: string;
+  startPoint: { name: string };
+  endPoint: { name: string };
+  distance: number;
+  color: string;
+}
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -37,7 +51,68 @@ export default function Register() {
   });
   const [loading, setLoading] = useState(false);
   const [showRolePicker, setShowRolePicker] = useState(false);
+  const [showRoutePicker, setShowRoutePicker] = useState(false);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [filteredRoutes, setFilteredRoutes] = useState<Route[]>([]);
+  const [routeSearchQuery, setRouteSearchQuery] = useState('');
+  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
+  const [loadingRoutes, setLoadingRoutes] = useState(false);
   const { register } = useAuth();
+
+  // Fetch routes when driver role is selected
+  useEffect(() => {
+    if (formData.role === 'DRIVER') {
+      fetchRoutes();
+    }
+  }, [formData.role]);
+
+  // Filter routes based on search query
+  useEffect(() => {
+    if (!routeSearchQuery) {
+      setFilteredRoutes(routes);
+    } else {
+      const query = routeSearchQuery.toLowerCase();
+      const filtered = routes.filter(
+        (route) =>
+          route.routeNumber.toLowerCase().includes(query) ||
+          route.routeName.toLowerCase().includes(query) ||
+          route.startPoint.name.toLowerCase().includes(query) ||
+          route.endPoint.name.toLowerCase().includes(query)
+      );
+      setFilteredRoutes(filtered);
+    }
+  }, [routeSearchQuery, routes]);
+
+  const fetchRoutes = async () => {
+    try {
+      setLoadingRoutes(true);
+      const apiClient = getAPIClient();
+      const data = await apiClient.getRoutes();
+      
+      if (data && data.length > 0) {
+        setRoutes(data);
+        setFilteredRoutes(data);
+      } else {
+        console.warn('No routes available');
+        setRoutes([]);
+        setFilteredRoutes([]);
+      }
+    } catch (error) {
+      console.error('Error fetching routes:', error);
+      Alert.alert('Error', 'Could not load routes. Please check your connection and try again.');
+      setRoutes([]);
+      setFilteredRoutes([]);
+    } finally {
+      setLoadingRoutes(false);
+    }
+  };
+
+  const handleRouteSelect = (route: Route) => {
+    setSelectedRoute(route);
+    updateFormData('route', route.routeNumber);
+    setShowRoutePicker(false);
+    setRouteSearchQuery('');
+  };
 
   const handleRegister = async () => {
     // Common field validation
@@ -79,6 +154,8 @@ export default function Register() {
         phone: formData.phone,
         nic: formData.nic,
         route: formData.role === 'DRIVER' ? formData.route : undefined,
+        routeId: formData.role === 'DRIVER' && selectedRoute ? selectedRoute.routeId : undefined,
+        routeName: formData.role === 'DRIVER' && selectedRoute ? selectedRoute.routeName : undefined,
         vehicleNumber: formData.role === 'DRIVER' ? formData.vehicleNumber : undefined,
       };
 
@@ -192,12 +269,106 @@ export default function Register() {
           {/* Driver-Specific Fields */}
           {formData.role === 'DRIVER' && (
             <>
-              <Input
-                label="Route *"
-                value={formData.route}
-                onChangeText={(value) => updateFormData('route', value)}
-                placeholder="e.g., Route 138, Colombo-Kandy"
-              />
+              <View style={styles.pickerContainer}>
+                <Text style={styles.label}>Route * {loadingRoutes && '(Loading...)'}</Text>
+                <TouchableOpacity
+                  style={styles.pickerButton}
+                  onPress={() => setShowRoutePicker(!showRoutePicker)}
+                >
+                  {selectedRoute ? (
+                    <View style={styles.routeDisplay}>
+                      <View style={styles.routeInfo}>
+                        <Text style={styles.routeNumber}>{selectedRoute.routeNumber}</Text>
+                        <Text style={styles.routeText}>{selectedRoute.routeName}</Text>
+                      </View>
+                      <ChevronDown size={20} color={Colors.gray[400]} />
+                    </View>
+                  ) : (
+                    <>
+                      <Text style={[styles.pickerText, { color: Colors.gray[400] }]}>
+                        Select or search route
+                      </Text>
+                      <ChevronDown size={20} color={Colors.gray[400]} />
+                    </>
+                  )}
+                </TouchableOpacity>
+                
+                {showRoutePicker && (
+                  <View style={styles.routePickerModal}>
+                    <View style={styles.searchContainer}>
+                      <Search size={18} color={Colors.gray[400]} style={styles.searchIcon} />
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search by route number or name"
+                        placeholderTextColor={Colors.gray[400]}
+                        value={routeSearchQuery}
+                        onChangeText={setRouteSearchQuery}
+                        autoFocus
+                      />
+                    </View>
+                    
+                    {loadingRoutes ? (
+                      <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color={Colors.primary} />
+                      </View>
+                    ) : filteredRoutes.length === 0 ? (
+                      <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>
+                          {routeSearchQuery ? 'No routes found' : 'No routes available'}
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.manualEntryButton}
+                          onPress={() => {
+                            setShowRoutePicker(false);
+                            Alert.alert(
+                              'Manual Entry',
+                              'Enter route number manually',
+                              [
+                                {
+                                  text: 'OK',
+                                  onPress: () => {
+                                    // Allow manual entry
+                                  }
+                                }
+                              ]
+                            );
+                          }}
+                        >
+                          <Text style={styles.manualEntryText}>Enter Manually</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <FlatList
+                        data={filteredRoutes}
+                        keyExtractor={(item) => item.routeId}
+                        style={styles.routeList}
+                        renderItem={({ item }) => (
+                          <TouchableOpacity
+                            style={styles.routeItem}
+                            onPress={() => handleRouteSelect(item)}
+                          >
+                            <View style={styles.routeItemHeader}>
+                              <View style={[styles.routeBadge, { backgroundColor: item.color + '20' }]}>
+                                <Text style={[styles.routeBadgeText, { color: item.color }]}>
+                                  {item.routeNumber}
+                                </Text>
+                              </View>
+                              <Text style={styles.routeDistance}>{item.distance}km</Text>
+                            </View>
+                            <Text style={styles.routeItemName}>{item.routeName}</Text>
+                            <View style={styles.routePoints}>
+                              <MapPin size={12} color={Colors.gray[500]} />
+                              <Text style={styles.routePointText}>
+                                {item.startPoint.name} → {item.endPoint.name}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        )}
+                      />
+                    )}
+                  </View>
+                )}
+              </View>
 
               <Input
                 label="Vehicle Number *"
@@ -319,6 +490,132 @@ const styles = StyleSheet.create({
   pickerOptionText: {
     fontSize: 16,
     color: Colors.text.primary,
+  },
+  routeDisplay: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flex: 1,
+  },
+  routeInfo: {
+    flex: 1,
+  },
+  routeNumber: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginBottom: 2,
+  },
+  routeText: {
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  routePickerModal: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    marginTop: 4,
+    maxHeight: 400,
+    zIndex: 1000,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.gray[50],
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text.primary,
+    padding: 8,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  manualEntryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+  },
+  manualEntryText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  routeList: {
+    maxHeight: 320,
+  },
+  routeItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  routeItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  routeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  routeBadgeText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  routeDistance: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    fontWeight: '500',
+  },
+  routeItemName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  routePoints: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  routePointText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginLeft: 4,
   },
   registerButton: {
     marginTop: 8,

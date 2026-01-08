@@ -8,9 +8,10 @@ import {
   Dimensions,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Bell, BellOff, Users, MapPin, Clock, RefreshCw } from 'lucide-react-native';
+import { ArrowLeft, Bell, BellOff, Users, MapPin, Clock, RefreshCw, Navigation } from 'lucide-react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Button } from '../../components/Button';
 import { Colors } from '../../constants/colors';
@@ -22,6 +23,7 @@ interface BusInfo {
   id: string;
   routeNumber: string;
   routeName: string;
+  routeId?: string;
   arrivalTime: string;
   isLive: boolean;
   crowdLevel: 'low' | 'medium' | 'high';
@@ -35,6 +37,41 @@ interface BusInfo {
   speed?: number;
 }
 
+interface RouteStop {
+  stopId: string;
+  name: string;
+  location: {
+    type: string;
+    coordinates: [number, number]; // [longitude, latitude]
+  };
+  order: number;
+  estimatedTime: number;
+}
+
+interface RouteDetails {
+  routeId: string;
+  routeNumber: string;
+  routeName: string;
+  startPoint: {
+    name: string;
+    location: {
+      type: string;
+      coordinates: [number, number];
+    };
+  };
+  endPoint: {
+    name: string;
+    location: {
+      type: string;
+      coordinates: [number, number];
+    };
+  };
+  stops: RouteStop[];
+  distance: number;
+  estimatedDuration: number;
+  color: string;
+}
+
 export default function BusTracking() {
   const params = useLocalSearchParams();
   const busId = params.busId as string;
@@ -42,6 +79,7 @@ export default function BusTracking() {
   
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [busInfo, setBusInfo] = useState<BusInfo | null>(null);
+  const [routeDetails, setRouteDetails] = useState<RouteDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -88,6 +126,16 @@ export default function BusTracking() {
     return () => clearInterval(interval);
   }, [busId]);
 
+  // Fetch route details when busInfo changes
+  useEffect(() => {
+    if (busInfo?.routeId) {
+      console.log('Loading route details for routeId:', busInfo.routeId);
+      loadRouteDetails(busInfo.routeId);
+    } else {
+      console.log('No routeId in busInfo:', busInfo);
+    }
+  }, [busInfo?.routeId]);
+
   // Separate effect to update map when busInfo changes
   useEffect(() => {
     if (busInfo?.isLive && busInfo.currentLocation) {
@@ -95,6 +143,52 @@ export default function BusTracking() {
       console.log('Bus location updated:', busInfo.currentLocation);
     }
   }, [busInfo?.currentLocation.latitude, busInfo?.currentLocation.longitude]);
+
+  const loadRouteDetails = async (routeIdOrNumber: string) => {
+    try {
+      console.log('Fetching routes...');
+      const routes = await apiClient.getRoutes();
+      console.log('Total routes fetched:', routes.length);
+      
+      const route = routes.find(
+        r => r.routeId === routeIdOrNumber || r.routeNumber === routeIdOrNumber
+      );
+      
+      if (route) {
+        console.log('Route found:', route.routeNumber, 'with', route.stops?.length || 0, 'stops');
+        console.log('Route stops details:', JSON.stringify(route.stops, null, 2));
+        console.log('Setting routeDetails state...');
+        setRouteDetails(route);
+        console.log('RouteDetails state updated');
+      } else {
+        console.log('No matching route found for:', routeIdOrNumber);
+        console.log('Available routes:', routes.map(r => ({ id: r.routeId, num: r.routeNumber })));
+      }
+    } catch (error) {
+      console.error('Error loading route details:', error);
+    }
+  };
+
+  const findNearestStop = (busLat: number, busLon: number, stops: RouteStop[]) => {
+    let nearestStop: RouteStop | null = null;
+    let minDistance = Infinity;
+
+    stops.forEach(stop => {
+      const distance = calculateDistance(
+        busLat,
+        busLon,
+        stop.location.coordinates[1],
+        stop.location.coordinates[0]
+      );
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearestStop = stop;
+      }
+    });
+
+    return { stop: nearestStop, distance: minDistance };
+  };
 
   const loadBusInfo = async (isRefresh = false) => {
     try {
@@ -123,6 +217,7 @@ export default function BusTracking() {
           
           // Extract route info from available data
           const routeNumber = busData.routeId || busData.routeNumber || busId.split('_')[1] || 'Unknown';
+          const routeId = busData.routeId || busData.routeNumber || routeNumber;
           
           // Calculate more accurate arrival time based on actual speed and distance
           const speed = busData.speed || 30; // Default 30 km/h if not available
@@ -130,6 +225,7 @@ export default function BusTracking() {
           
           setBusInfo({
             id: busId,
+            routeId: routeId,
             routeNumber: routeNumber,
             routeName: `Route ${routeNumber}`,
             arrivalTime: eta,
@@ -155,18 +251,20 @@ export default function BusTracking() {
       } else {
         // Get online drivers from driver list API (fallback)
         const drivers = await apiClient.getDrivers();
-        const onlineDrivers = drivers.filter(d => d.isOnline || d.isActive);
+        const onlineDrivers = drivers.filter(d => d.isActive);
         
         if (onlineDrivers.length > 0) {
           const firstDriver = onlineDrivers[0];
-          const routeNumber = firstDriver.routeId || firstDriver.route || 'Unknown';
+          const routeNumber = firstDriver.routeId || 'Unknown';
+          const routeId = firstDriver.routeId || routeNumber;
           
           // Use last known location or default Colombo location
           const latitude = firstDriver.location?.latitude || 6.9271;
           const longitude = firstDriver.location?.longitude || 79.8612;
           
           setBusInfo({
-            id: firstDriver.busId || firstDriver.vehicleNumber || 'unknown',
+            id: firstDriver.busId || 'unknown',
+            routeId: routeId,
             routeNumber: routeNumber,
             routeName: `Route ${routeNumber}`,
             arrivalTime: calculateETA(latitude, longitude, 30), // Default 30 km/h
@@ -455,6 +553,130 @@ export default function BusTracking() {
             </Text>
           </View>
         )}
+
+        {/* Route Details and Stops */}
+        {(() => {
+          console.log('Checking routeDetails:', routeDetails ? 'EXISTS' : 'NULL');
+          if (routeDetails) {
+            console.log('RouteDetails data:', {
+              routeNumber: routeDetails.routeNumber,
+              stopsCount: routeDetails.stops?.length,
+              hasStops: !!routeDetails.stops
+            });
+          }
+          return routeDetails ? (
+          <View style={styles.routeDetailsSection}>
+            {/* Route Header */}
+            <View style={styles.routeHeader}>
+              <Navigation size={20} color={Colors.primary} />
+              <View style={styles.routeHeaderText}>
+                <Text style={styles.routeTitle}>Route {routeDetails.routeNumber}</Text>
+                <Text style={styles.routePath}>
+                  {routeDetails.startPoint.name} → {routeDetails.endPoint.name}
+                </Text>
+              </View>
+            </View>
+
+            {/* Route Stats */}
+            <View style={styles.routeStats}>
+              <View style={styles.routeStat}>
+                <Text style={styles.routeStatLabel}>Total Distance</Text>
+                <Text style={styles.routeStatValue}>{routeDetails.distance.toFixed(1)} km</Text>
+              </View>
+              <View style={styles.routeStat}>
+                <Text style={styles.routeStatLabel}>Total Time</Text>
+                <Text style={styles.routeStatValue}>{routeDetails.estimatedDuration} min</Text>
+              </View>
+              <View style={styles.routeStat}>
+                <Text style={styles.routeStatLabel}>Total Stops</Text>
+                <Text style={styles.routeStatValue}>{routeDetails.stops.length}</Text>
+              </View>
+            </View>
+
+            {/* Stops List */}
+            <View style={styles.stopsSection}>
+              <Text style={styles.stopsSectionTitle}>Bus Stops ({routeDetails.stops.length})</Text>
+              <ScrollView 
+                style={styles.stopsScrollView}
+                showsVerticalScrollIndicator={false}
+              >
+                {(() => {
+                  console.log('Rendering stops, total:', routeDetails.stops.length);
+                  console.log('BusInfo location:', busInfo.currentLocation);
+                  return routeDetails.stops.map((stop, index) => {
+                    console.log('Rendering stop:', index + 1, stop.name, 'Order:', stop.order, 'EstimatedTime:', stop.estimatedTime);
+                    
+                    const { stop: nearestStop, distance: distanceToBus } = findNearestStop(
+                      busInfo.currentLocation.latitude,
+                      busInfo.currentLocation.longitude,
+                      routeDetails.stops
+                    );
+                    const isNearest = nearestStop?.stopId === stop.stopId;
+                    
+                    console.log('Is nearest:', isNearest, 'Distance:', distanceToBus.toFixed(2), 'km');
+
+                  return (
+                    <View 
+                      key={stop.stopId} 
+                      style={[
+                        styles.stopCard,
+                        isNearest && styles.nearestStopCard
+                      ]}
+                    >
+                      <View style={styles.stopNumberContainer}>
+                        <View style={[
+                          styles.stopNumber,
+                          isNearest && styles.nearestStopNumber
+                        ]}>
+                          <Text style={[
+                            styles.stopNumberText,
+                            isNearest && styles.nearestStopNumberText
+                          ]}>
+                            {stop.order}
+                          </Text>
+                        </View>
+                        {index < routeDetails.stops.length - 1 && (
+                          <View style={styles.stopConnector} />
+                        )}
+                      </View>
+                      
+                      <View style={styles.stopInfo}>
+                        <View style={styles.stopNameRow}>
+                          <Text style={[
+                            styles.stopName,
+                            isNearest && styles.nearestStopName
+                          ]}>
+                            {stop.name}
+                          </Text>
+                          {isNearest && (
+                            <View style={styles.nearestBadge}>
+                              <Text style={styles.nearestBadgeText}>Nearest</Text>
+                            </View>
+                          )}
+                        </View>
+                        
+                        <View style={styles.stopDetails}>
+                          {stop.estimatedTime !== undefined && (
+                            <Text style={styles.stopDetailText}>
+                              <Clock size={12} color={Colors.text.secondary} /> {stop.estimatedTime} min
+                            </Text>
+                          )}
+                          {isNearest && (
+                            <Text style={styles.stopDetailText}>
+                              <MapPin size={12} color={Colors.primary} /> {distanceToBus.toFixed(2)} km away
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    </View>
+                  );
+                });
+              })()}
+              </ScrollView>
+            </View>
+          </View>
+        ) : null;
+        })()}
       </View>
     </SafeAreaView>
   );
@@ -691,6 +913,150 @@ const styles = StyleSheet.create({
   liveTrackingSubtext: {
     fontSize: 11,
     color: Colors.text.secondary,
+  },
+  routeDetailsSection: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  routeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  routeHeaderText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  routeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 2,
+  },
+  routePath: {
+    fontSize: 13,
+    color: Colors.text.secondary,
+  },
+  routeStats: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    gap: 12,
+  },
+  routeStat: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 8,
+  },
+  routeStatLabel: {
+    fontSize: 11,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  routeStatValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  stopsSection: {
+    marginTop: 8,
+  },
+  stopsSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 12,
+  },
+  stopsScrollView: {
+    maxHeight: 300,
+  },
+  stopCard: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  nearestStopCard: {
+    backgroundColor: Colors.primary + '08',
+    borderColor: Colors.primary,
+    borderWidth: 2,
+  },
+  stopNumberContainer: {
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  stopNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.gray[200],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nearestStopNumber: {
+    backgroundColor: Colors.primary,
+  },
+  stopNumberText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+  },
+  nearestStopNumberText: {
+    color: Colors.white,
+  },
+  stopConnector: {
+    width: 2,
+    flex: 1,
+    backgroundColor: Colors.gray[300],
+    marginTop: 4,
+    minHeight: 20,
+  },
+  stopInfo: {
+    flex: 1,
+  },
+  stopNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  stopName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.text.primary,
+    flex: 1,
+  },
+  nearestStopName: {
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  nearestBadge: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  nearestBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  stopDetails: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  stopDetailText: {
+    fontSize: 11,
+    color: Colors.text.secondary,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   loadingContainer: {
     flex: 1,

@@ -171,6 +171,20 @@ export default function PassengerHome() {
           </View>
         </View>
 
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => router.push('/passenger/active-buses')}
+          >
+            <View style={styles.actionIcon}>
+              <Search size={24} color={Colors.primary.main} />
+            </View>
+            <Text style={styles.actionText}>Active Buses</Text>
+            <Text style={styles.actionSubtext}>View all live buses</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Balance Card */}
         <View style={styles.balanceCard}>
           <View style={styles.balanceHeader}>
@@ -364,6 +378,41 @@ const styles = StyleSheet.create({
     color: Colors.white,
     marginLeft: 8,
     textDecorationLine: 'underline',
+  },
+  // Quick Actions
+  quickActions: {
+    marginBottom: 24,
+  },
+  actionButton: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.primary.light,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  actionText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  actionSubtext: {
+    fontSize: 13,
+    color: Colors.text.secondary,
   },
   // Sections
   section: {

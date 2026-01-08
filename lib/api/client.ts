@@ -501,8 +501,8 @@ export class BusTrackingAPIClient implements APIClient {
           accuracy: driver.location?.accuracy || 0,
           timestamp: driver.lastSeen || Date.now(),
         },
-        isActive: driver.isActive,
-        lastUpdate: new Date(driver.lastSeen).toISOString(),
+        isActive: driver.isOnline || driver.isActive || false,
+        lastUpdate: driver.lastSeen ? new Date(driver.lastSeen).toISOString() : new Date().toISOString(),
       }));
 
       return busLocations;
@@ -524,6 +524,22 @@ export class BusTrackingAPIClient implements APIClient {
     } catch (error) {
       if (error instanceof HTTPError) {
         throw new Error(error.data?.message || 'Failed to get bus location');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get all routes
+   */
+  async getRoutes(activeOnly: boolean = false): Promise<any[]> {
+    try {
+      const url = activeOnly ? `${API_ENDPOINTS.ROUTES.GET_ALL}?active=true` : API_ENDPOINTS.ROUTES.GET_ALL;
+      const response = await this.httpClient.get(url);
+      return response.data.data || [];
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        throw new Error(error.data?.message || 'Failed to get routes');
       }
       throw error;
     }
@@ -683,7 +699,7 @@ export class BusTrackingAPIClient implements APIClient {
         routeId: driver.routeId,
         route: driver.route || driver.routeId,
         vehicleNumber: driver.vehicleNumber || driver.busId,
-        isActive: driver.isActive,
+        isActive: driver.isOnline || driver.isActive || false,
         isOnline: driver.isOnline, // Include isOnline from MongoDB
         lastSeen: driver.lastSeen,
         location: driver.location,
